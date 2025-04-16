@@ -1,0 +1,19 @@
+nw_connection_copy_connected_local_endpoint_block_invoke [C59] Client called nw_connection_copy_connected_local_endpoint on unconnected nw_connection
+nw_connection_copy_connected_remote_endpoint_block_invoke [C59] Client called nw_connection_copy_connected_remote_endpoint on unconnected nw_connection
+nw_connection_copy_protocol_metadata_internal_block_invoke [C59] Client called nw_connection_copy_protocol_metadata_internal on unconnected nw_connection
+nw_connection_copy_connected_local_endpoint_block_invoke [C60] Client called nw_connection_copy_connected_local_endpoint on unconnected nw_connection
+nw_connection_copy_connected_remote_endpoint_block_invoke [C60] Client called nw_connection_copy_connected_remote_endpoint on unconnected nw_connection
+nw_connection_copy_protocol_metadata_internal_block_invoke [C60] Client called nw_connection_copy_protocol_metadata_internal on unconnected nw_connection
+nw_connection_copy_connected_local_endpoint_block_invoke [C57] Connection has no local endpoint
+nw_connection_copy_connected_local_endpoint_block_invoke [C57] Connection has no local endpoint
+quic_conn_change_current_path [C57.1.1.1:2] [-ede18c5889dc94ed] tried to change paths, but no alternatives were found
+nw_flow_service_writes Failing write request <nw_write_request> [57: Socket is not connected]
+nw_write_request_report [C57] Send failed with error "Socket is not connected"
+Task <9FFAB505-9EDF-446B-B54C-87B94479D997>.<15> HTTP load failed, 177/0 bytes (error code: -1005 [4:-4])
+nw_connection_copy_connected_local_endpoint_block_invoke [C57] Connection has no local endpoint
+Task <9FFAB505-9EDF-446B-B54C-87B94479D997>.<15> finished with error [-1005] Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost." UserInfo={_kCFStreamErrorCodeKey=-4, NSUnderlyingError=0x600000cbe0a0 {Error Domain=kCFErrorDomainCFNetwork Code=-1005 "(null)" UserInfo={NSErrorPeerAddressKey=<CFData 0x600002101270 [0x1e6ebb4f0]>{length = 16, capacity = 16, bytes = 0x100201bbd83ad1aa0000000000000000}, _kCFStreamErrorCodeKey=-4, _kCFStreamErrorDomainKey=4}}, _NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <9FFAB505-9EDF-446B-B54C-87B94479D997>.<15>, _NSURLErrorRelatedURLSessionTaskErrorKey=(
+    "LocalDataTask <9FFAB505-9EDF-446B-B54C-87B94479D997>.<15>"
+), NSLocalizedDescription=The network connection was lost., NSErrorFailingURLStringKey=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAy-cFfKeh_LTviVgIOvF3ZiUEDmdFYmyQ, NSErrorFailingURLKey=https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAy-cFfKeh_LTviVgIOvF3ZiUEDmdFYmyQ, _kCFStreamErrorDomainKey=4}
+nw_protocol_implementation_lookup_path [C57.1.1.1:2] No path found for a2452f0b5e670f2e
+0x105194018 57 Server protocol violation 0x02
+0x105194018 57 Control stream closed but connection is alive

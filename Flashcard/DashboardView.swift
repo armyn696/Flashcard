@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import Vision
 
 struct DashboardView: View {
     @StateObject private var dataStore = FlashcardDataStore()
@@ -15,6 +17,7 @@ struct DashboardView: View {
                 }
                 .onDelete(perform: deleteProject)
             }
+            .listStyle(InsetGroupedListStyle())
             .navigationTitle("Projects")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -68,6 +71,7 @@ struct ProjectView: View {
             }
             .onDelete(perform: deleteFolder)
         }
+        .listStyle(InsetGroupedListStyle())
         .navigationTitle(project.name)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -116,15 +120,21 @@ struct FolderView: View {
     @State private var sourceText = ""
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
+    @State private var showingImagePicker = false
+    @State private var inputImage: UIImage? = nil
+    @State private var recognizedText = ""
     
     var body: some View {
+        // Two-column grid layout
+        let columns: [GridItem] = [GridItem(.flexible()), GridItem(.flexible())]
         ScrollView {
-            VStack(spacing: 24) {
+            LazyVGrid(columns: columns, spacing: 24) {
                 ForEach(folder.flashcards) { card in
                     FlashcardCardView(card: card)
-                        .padding(.horizontal)
+                        .frame(maxWidth: .infinity)
                 }
             }
+            .padding(.horizontal)
             .padding(.top)
         }
         .navigationTitle(folder.name)
@@ -163,9 +173,28 @@ struct FolderView: View {
         .sheet(isPresented: $showingGenerateFlashcards) {
             VStack(spacing: 16) {
                 Text("Generate Flashcards with Gemini").font(.headline)
-                TextField("Paste your text here", text: $sourceText, axis: .vertical)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(minHeight: 80)
+                // Show selected image if any
+                if let img = inputImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 200)
+                }
+                // Image picker
+                Button("Select Image") { showingImagePicker = true }
+                    .sheet(isPresented: $showingImagePicker) {
+                        UIKitImagePicker(image: $inputImage)
+                    }
+                // Recognized text or manual input
+                if !recognizedText.isEmpty {
+                    TextEditor(text: $recognizedText)
+                        .frame(height: 80)
+                        .border(Color.gray)
+                } else {
+                    TextField("Paste your text here", text: $sourceText, axis: .vertical)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(minHeight: 80)
+                }
                 if isLoading {
                     ProgressView("Generating...")
                 }
@@ -175,7 +204,8 @@ struct FolderView: View {
                 Button("Generate") {
                     isLoading = true
                     errorMessage = nil
-                    GeminiAPI.shared.generateFlashcards(from: sourceText) { result in
+                    let textToGenerate = recognizedText.isEmpty ? sourceText : recognizedText
+                    GeminiAPI.shared.generateFlashcards(from: textToGenerate) { result in
                         isLoading = false
                         switch result {
                         case .success(let cards):
@@ -183,25 +213,45 @@ struct FolderView: View {
                                 dataStore.addFlashcard(card, to: folder, in: project)
                             }
                             sourceText = ""
+                            recognizedText = ""
                             showingGenerateFlashcards = false
                         case .failure(let error):
                             errorMessage = error.localizedDescription
                         }
                     }
-                }.disabled(sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                }.disabled((sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && recognizedText.isEmpty) || isLoading)
                 Button("Cancel") {
                     showingGenerateFlashcards = false
                     sourceText = ""
+                    recognizedText = ""
                 }
             }
             .padding()
+            // OCR on image selection
+            .onChange(of: inputImage) { _ in
+                if let img = inputImage { performOCR(img) }
+            }
         }
     }
     
-    func deleteFlashcard(at offsets: IndexSet) {
-        for index in offsets {
-            let card = folder.flashcards[index]
-            dataStore.removeFlashcard(card, from: folder, in: project)
+    /// Perform OCR on selected image
+    private func performOCR(_ image: UIImage) {
+        guard let cgImage = image.cgImage else { return }
+        let request = VNRecognizeTextRequest { request, error in
+            if let error = error {
+                errorMessage = error.localizedDescription
+                return
+            }
+            let texts = request.results?
+                .compactMap { $0 as? VNRecognizedTextObservation }
+                .compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: "\n") ?? ""
+            DispatchQueue.main.async { recognizedText = texts }
+        }
+        request.recognitionLevel = .accurate
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? handler.perform([request])
         }
     }
 }
@@ -209,56 +259,118 @@ struct FolderView: View {
 struct FlashcardCardView: View {
     let card: Flashcard
     @State private var isFlipped = false
+    @State private var userAnswer = ""
+    @State private var score: Int? = nil
+    @State private var isChecking = false
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 20)
-                .fill(isFlipped ? Color.blue.opacity(0.1) : Color.yellow.opacity(0.2))
-                .shadow(radius: 4)
-            Group {
-                if isFlipped {
-                    VStack {
-                        Text(card.answer)
-                            .font(.title2)
-                            .fontWeight(.medium)
-                            .foregroundColor(.blue)
-                            .multilineTextAlignment(.center)
-                        Spacer(minLength: 0)
-                        Text("Tap to see question")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    .padding()
-                } else {
-                    VStack {
-                        Text(card.question)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.black)
-                            .multilineTextAlignment(.center)
-                        Spacer(minLength: 0)
-                        Text("Tap to see answer")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    .padding()
+        VStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.white)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.black, lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
+                // front view
+                VStack {
+                    Text(card.question)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.black)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    Text("Tap to see answer")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                .opacity(isFlipped ? 0 : 1)
+                // back view
+                VStack {
+                    Text(card.answer)
+                        .font(.title2)
+                        .fontWeight(.medium)
+                        .foregroundColor(.black)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    Text("Tap to see question")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+                .opacity(isFlipped ? 1 : 0)
+            }
+            .frame(height: 180)
+            .onTapGesture {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                    isFlipped.toggle()
+                    let impact = UIImpactFeedbackGenerator(style: .medium)
+                    impact.impactOccurred()
                 }
             }
             .rotation3DEffect(.degrees(isFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-        }
-        .frame(height: 180)
-        .onTapGesture {
-            withAnimation(.spring()) { isFlipped.toggle() }
-        }
-        .rotation3DEffect(
-            .degrees(isFlipped ? 180 : 0),
-            axis: (x: 0, y: 1, z: 0)
-        )
-        .animation(.spring(), value: isFlipped)
+            .animation(.spring(response: 0.6, dampingFraction: 0.7), value: isFlipped)
+            
+            // Answer input section
+            TextField("Your answer", text: $userAnswer)
+                .padding(8)
+                .background(Color.white)
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray, lineWidth: 1))
+                .padding(.horizontal)
+            HStack {
+                Button("Check") {
+                    isChecking = true
+                    score = nil
+                    GeminiAPI.shared.evaluateAnswer(correct: card.answer, userAnswer: userAnswer) { result in
+                        isChecking = false
+                        if case .success(let value) = result {
+                            score = value
+                        }
+                    }
+                }
+                .disabled(userAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChecking)
+                if isChecking {
+                    ProgressView()
+                        .frame(width: 20, height: 20)
+                } else if let score = score {
+                    Text("Score: \(score)%")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+        } // VStack
     }
 }
 
 struct DashboardView_Previews: PreviewProvider {
     static var previews: some View {
         DashboardView()
+    }
+}
+
+/// UIKit UIImagePickerController bridge for SwiftUI
+struct UIKitImagePicker: UIViewControllerRepresentable {
+    @Environment(\.presentationMode) var presentationMode
+    @Binding var image: UIImage?
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: UIKitImagePicker
+        init(_ parent: UIKitImagePicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            if let uiImage = info[.originalImage] as? UIImage {
+                parent.image = uiImage
+            }
+            parent.presentationMode.wrappedValue.dismiss()
+        }
     }
 }

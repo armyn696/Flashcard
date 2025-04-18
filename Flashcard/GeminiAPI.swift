@@ -80,4 +80,99 @@ class GeminiAPI {
         }
         task.resume()
     }
+    
+    /// Evaluate user's answer correctness and return a percentage score via API
+    func evaluateAnswer(correct: String, userAnswer: String, completion: @escaping (Result<Int, Error>) -> Void) {
+        let urlString = "\(endpoint)\(model):generateContent?key=\(apiKey)"
+        guard let url = URL(string: urlString) else {
+            // fallback to local scoring on invalid URL
+            let local = simpleLocalScore(correct: correct, userAnswer: userAnswer)
+            completion(.success(local))
+            return
+        }
+        let prompt = "Evaluate the following student's answer: \"\(userAnswer)\" against the correct answer: \"\(correct)\". Return a JSON object with a single field \"score\" whose value is an integer between 0 and 100."
+        let body: [String: Any] = [
+            "contents": [
+                [
+                    "role": "user",
+                    "parts": [ ["text": prompt] ]
+                ]
+            ]
+        ]
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            if error != nil {
+                // network error: fallback
+                let local = self.simpleLocalScore(correct: correct, userAnswer: userAnswer)
+                DispatchQueue.main.async { completion(.success(local)) }
+                return
+            }
+            guard let data = data else {
+                // no data: fallback
+                let local = self.simpleLocalScore(correct: correct, userAnswer: userAnswer)
+                DispatchQueue.main.async { completion(.success(local)) }
+                return
+            }
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let candidates = json["candidates"] as? [[String: Any]],
+                   let first = candidates.first,
+                   let content = first["content"] as? [String: Any],
+                   let parts = content["parts"] as? [[String: Any]],
+                   let part = parts.first,
+                   let rawText = part["text"] as? String {
+                    // Extract JSON if present
+                    let jsonString: String
+                    if rawText.contains("```json") {
+                        jsonString = rawText
+                            .replacingOccurrences(of: "```json", with: "")
+                            .replacingOccurrences(of: "```", with: "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else if rawText.contains("```") {
+                        jsonString = rawText
+                            .replacingOccurrences(of: "```", with: "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        jsonString = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                    // Attempt JSON decode
+                    if let jsonData = jsonString.data(using: .utf8) {
+                        struct ScoreResponse: Decodable { let score: Int }
+                        if let resp = try? JSONDecoder().decode(ScoreResponse.self, from: jsonData) {
+                            DispatchQueue.main.async { completion(.success(resp.score)) }
+                            return
+                        }
+                    }
+                    // If JSON decode fails, try extract first integer
+                    if let range = rawText.range(of: "\\d+", options: .regularExpression),
+                       let value = Int(String(rawText[range])) {
+                        DispatchQueue.main.async { completion(.success(value)) }
+                        return
+                    }
+                }
+                // If parsing chain fails, fallback
+                let local = self.simpleLocalScore(correct: correct, userAnswer: userAnswer)
+                DispatchQueue.main.async { completion(.success(local)) }
+            } catch {
+                // parsing error: fallback
+                let local = self.simpleLocalScore(correct: correct, userAnswer: userAnswer)
+                DispatchQueue.main.async { completion(.success(local)) }
+            }
+        }
+        task.resume()
+    }
+    
+    /// Simple local scoring based on word overlap
+    private func simpleLocalScore(correct: String, userAnswer: String) -> Int {
+        let sep: (Character) -> Bool = { !$0.isLetter }
+        let corrWords = Set(correct.lowercased().split(whereSeparator: sep))
+        let userWords = Set(userAnswer.lowercased().split(whereSeparator: sep))
+        guard !corrWords.isEmpty else { return 0 }
+        let overlap = corrWords.intersection(userWords).count
+        let score = Int(Double(overlap) / Double(corrWords.count) * 100)
+        return min(max(score, 0), 100)
+    }
 }

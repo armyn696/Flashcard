@@ -1,0 +1,31 @@
+به احتمال زیاد، بازگشت به صفحه قبل پس از حذف فلش‌کارت، یک رفتار عمدی در کد برنامه شما است و نه یک مشکل فنی.
+
+دلایل احتمالی این اتفاق عبارتند از:
+
+1.  استفاده از `popViewController`: اگر از UINavigationController برای مدیریت نمایش صفحات (View Controller ها) استفاده می‌کنید، بسیار محتمل است که پس از عملیات حذف، دستوری مانند navigationController?.popViewController(animated: true) فراخوانی شده باشد. این دستور به Navigation Controller می‌گوید که به صفحه قبلی در پشته ناوبری (navigation stack) بازگردد[2][4][5]. این کار معمولاً برای بازگرداندن کاربر به لیستی که آیتم حذف شده در آن قرار داشت، انجام می‌شود.
+2.  استفاده از `dismiss`: اگر صفحه نمایش فلش‌کارت به صورت "modal" (یعنی روی صفحه قبلی نمایش داده شده) باز شده باشد یا اگر از SwiftUI استفاده می‌کنید، ممکن است پس از حذف، متد dismiss(animated: true, completion: nil) (برای UIKit) یا dismiss() (در SwiftUI با استفاده از `@Environment(\.dismiss)`) فراخوانی شده باشد[4][1]. این دستور باعث بسته شدن صفحه فعلی و نمایش صفحه زیرین می‌شود.
+3.  Unwind Segues (در Storyboard): اگر از Storyboard استفاده می‌کنید، ممکن است یک "Unwind Segue" تعریف شده باشد که پس از عملیات حذف، فعال شده و کاربر را به یک View Controller مشخص (معمولاً صفحه قبلی) بازمی‌گرداند[4].
+4.  مشکلات احتمالی در SwiftUI (کمتر محتمل):
+    *   در نسخه‌های خاصی مانند iOS 18، ممکن است استفاده از @Environment(\.dismiss) در SwiftUI باعث رفتارهای ناخواسته در ناوبری شود، هرچند این معمولاً به صورت تکرار ناوبری بروز می‌کند تا بازگشت ساده[1].
+    *   گاهی اوقات نحوه مدیریت وضعیت (State Management) در SwiftUI می‌تواند منجر به ناوبری‌های غیرمنتظره شود، اما بازگشت پس از حذف معمولاً یک الگوی طراحی عمدی است.
+
+نتیجه‌گیری:
+
+بازگشت به صفحه قبل پس از حذف یک آیتم، یک الگوی رایج در طراحی رابط کاربری iOS است. برای اطمینان، بخشی از کد خود را که مسئولیت حذف فلش‌کارت را بر عهده دارد، بررسی کنید. به احتمال زیاد یکی از دستورات popViewController یا dismiss را پس از تکمیل عملیات حذف پیدا خواهید کرد[2][4].
+
+Sources
+[1] Navigation Issue in iOS 18: Duplication of Navigation Trigger When ... https://stackoverflow.com/questions/79405363/navigation-issue-in-ios-18-duplication-of-navigation-trigger-when-using-enviro
+[2] Go Back to Previous ViewController in Swift - Tutorialspoint https://www.tutorialspoint.com/programmatically-go-back-to-the-previous-viewcontroller-in-swift
+[3] CardView is not shown when removing and inserting a card into the ... https://www.hackingwithswift.com/forums/100-days-of-swiftui/project-17-challenge-3-cardview-is-not-shown-when-removing-and-inserting-a-card-into-the-cards-array/28337
+[4] Programmatically go back to previous ViewController in Swift https://stackoverflow.com/questions/28760541/programmatically-go-back-to-previous-viewcontroller-in-swift
+[5] How to go to Previous View Controller - YouTube https://www.youtube.com/watch?v=2m1MVAVPcYc
+[6] Won't launch - Flashcards Deluxe Forum • View topic http://flashcardsdeluxe.com/forum/viewtopic.php?f=2&t=275
+[7] Display Assembly Coming Apart at Hinge (Just over 1 year old!!!) https://community.acer.com/en/discussion/654828/display-assembly-coming-apart-at-hinge-just-over-1-year-old-swift-3-sf314-42-r9yn
+[8] Creating a Flashcard App for Kids - YouTube https://www.youtube.com/watch?v=yvqgnwWOh0M
+[9] Acer Swift 3 SF314-54-55S5 Display Screen Issues - known problem? https://community.acer.com/en/discussion/657673/acer-swift-3-sf314-54-55s5-display-screen-issues-known-problem
+[10] iOS Interview Questions - Swift Flashcards - Quizlet https://quizlet.com/638398193/ios-interview-questions-swift-flash-cards/
+[11] Education | AppleVis https://www.applevis.com/ios-ipados-app-directory/education
+[12] Remove Navigation Controller behav… - Apple Developer Forums https://forums.developer.apple.com/forums/thread/668443
+[13] How can you go back to a previous view controller without ... - Reddit https://www.reddit.com/r/swift/comments/10v89pf/how_can_you_go_back_to_a_previous_view_controller/
+[14] Organize Your Flashcards Easily with Kilonotes - TikTok https://www.tiktok.com/@kilonotesapp/video/7335137361883335943
+[15] A fully functioning iOS Flashcard app made using Swift. - GitHub https://github.

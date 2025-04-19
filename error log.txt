@@ -1,9 +1,0 @@
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/ContentView.swift:123:8 Invalid redeclaration of 'ImagePicker'
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/ContentView.swift:123:8 Invalid redeclaration of 'ImagePicker'
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/ContentView.swift:138:21 'ImagePicker' is ambiguous for type lookup in this context
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/ContentView.swift:139:24 'ImagePicker' is ambiguous for type lookup in this context
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:367:21 'ImagePicker' is ambiguous for type lookup in this context
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:186:55 Missing argument for parameter 'onImagePicked' in call
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:356:8 Invalid redeclaration of 'ImagePicker'
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:367:21 'ImagePicker' is ambiguous for type lookup in this context
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:368:24 'ImagePicker' is ambiguous for type lookup in this context

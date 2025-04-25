@@ -1607,8 +1607,28 @@ struct StrictZoomPDFView: UIViewRepresentable {
                 lastScale = pdfView.scaleFactor
             }
             else if gesture.state == .changed {
-                let currentScale = lastScale * gesture.scale
-                pdfView.scaleFactor = max(currentScale, pageFitScaleFactor)
+                // Allow temporary zooming below minimum during gesture for natural feel
+                // This gives elasticity to the gesture
+                let proposedScale = lastScale * gesture.scale
+                pdfView.scaleFactor = proposedScale
+            }
+            else if gesture.state == .ended || gesture.state == .cancelled {
+                // If we're below the minimum zoom, animate smoothly back to the fit scale
+                if pdfView.scaleFactor < pageFitScaleFactor {
+                    // Get velocity for natural feel
+                    let velocity = gesture.velocity
+                    let velocityFactor = velocity > 0 ? 1.0 : max(0.5, 1.0 + velocity * 0.2)
+                    
+                    // Animate with spring physics for a natural bounce
+                    UIView.animate(withDuration: 0.4, 
+                                   delay: 0, 
+                                   usingSpringWithDamping: 0.7, 
+                                   initialSpringVelocity: velocityFactor, 
+                                   options: [.allowUserInteraction, .curveEaseOut], 
+                                   animations: {
+                        pdfView.scaleFactor = self.pageFitScaleFactor
+                    }, completion: nil)
+                }
             }
         }
         

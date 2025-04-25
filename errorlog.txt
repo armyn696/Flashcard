@@ -1,1 +1,2 @@
-/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:705:18 'onChange(of:perform:)' was deprecated in iOS 17.0: Use `onChange` with a two or zero parameter action closure instead.
+/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:1485:17 Value of type 'PDFView' has no member 'scrollView'
+/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/DashboardView.swift:1653:39 Value of type 'PDFView' has no member 'scrollView'

@@ -1,0 +1,57 @@
+Okay, let's refine the prompt to address these new requirements: multilingual support, clear/complete questions, concise answers, fill-in-the-blank options, and correct punctuation.
+
+Here’s an improved prompt structure incorporating these points:
+
+```prompt
+You are an AI assistant specializing in creating educational flashcards from text. Your task is to generate flashcard content based on the provided 'Context Text'.
+
+**Core Instructions:**
+
+1.  **Language Detection:** Analyze the language of the 'Context Text'. All generated questions and answers MUST be in the **same language** as the context.
+2.  **Generate Two Types of Flashcards (If Possible):**
+    * **Type 1: Standard Question & Answer:**
+        * **Question (Q_Std):** Generate a clear, complete, and understandable question based on the text. The question should not be too short or ambiguous; ensure the user knows what information is being sought. End the question with a question mark (?).
+        * **Answer (A_Std):** Provide a VERY CONCISE answer to the question. Aim for under [e.g., 15] words, focusing on the key fact, definition, term, date, etc. This answer needs to be suitable for quick recall.
+    * **Type 2: Fill-in-the-Blank:**
+        * **Question (Q_Fill):** Create a sentence based on the context text where a key term, concept, or piece of information is replaced by '__________' (a blank). The sentence should provide enough context for the user to figure out the missing word(s).
+        * **Answer (A_Fill):** Provide ONLY the word(s) that were removed to create the blank in Q_Fill. This answer should also be concise.
+
+**Input:**
+
+Context Text:
+---
+[Paste the text or text from image here]
+---
+
+**Output Format:**
+
+Please generate the flashcard content based on the text above. If the text allows for both types, provide both. Format the output clearly like this:
+
+Q_Std: [Generated standard question ending with ?]
+A_Std: [Generated concise standard answer]
+Q_Fill: [Generated fill-in-the-blank sentence with '__________']
+A_Fill: [The word(s) that fit the blank]
+
+---
+
+**Example (if context was about photosynthesis in English):**
+
+Q_Std: What is the primary pigment used by plants to capture light energy for photosynthesis?
+A_Std: Chlorophyll
+Q_Fill: Plants use a pigment called __________ to absorb sunlight during photosynthesis.
+A_Fill: Chlorophyll
+
+---
+Now, generate the flashcard content based on the provided 'Context Text'.
+```
+
+**Explanation of Changes and Why They Work:**
+
+1.  **Multilingual:** Explicitly instructing the AI to detect and use the *same language* as the input context (`Instruction 1`) directly addresses this need. Most modern LLMs handle this well.
+2.  **Question Clarity vs. Answer Brevity:** The instructions now clearly differentiate. `Instruction 2a (Question)` specifically asks for "clear, complete, and understandable" questions, discouraging excessive shortness. `Instruction 2a (Answer)` maintains the strong constraint for a "VERY CONCISE" answer.
+3.  **Fill-in-the-Blanks:** `Instruction 2b` explicitly asks for this format, explaining *how* to create it (replace key info with '__________') and specifying that the answer (`A_Fill`) should *only* be the removed word(s), keeping it concise. The instruction "If Possible" acknowledges that not all text snippets lend themselves well to this format.
+4.  **Question Mark:** `Instruction 2a (Question)` now includes the requirement to end standard questions with a "?".
+5.  **Clear Output Formatting:** Requesting specific labels (`Q_Std`, `A_Std`, `Q_Fill`, `A_Fill`) makes the API response much easier for your application to parse and use correctly.
+6.  **Example:** Providing a clear example reinforces all the requirements (question style, answer conciseness, fill-in-the-blank format, language matching implicitly).
+
+Remember to replace `[e.g., 15]` with your preferred maximum word count for standard answers. As always, you might need to tweak the wording slightly depending on the specific AI model you are using.

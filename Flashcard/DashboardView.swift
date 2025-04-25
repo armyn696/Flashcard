@@ -1,10 +1,72 @@
 import SwiftUI
 import UIKit
+import PDFKit
+
+// Define app colors as constants for consistency
+let textColor = Color(hex: "#E1E1E1")
+let backgroundColor = Color(hex: "#000000")
+let cardColor = Color(hex: "#1c1c1e")
+
+// Add extension for hex colors
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (1, 1, 1, 0)
+        }
+
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue:  Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+}
+
+// Loading screen view that shows on app startup
+struct LoadingView: View {
+    var body: some View {
+        ZStack {
+            backgroundColor.edgesIgnoringSafeArea(.all)
+            VStack {
+                if let uiImage = UIImage(named: "loading.PNG") ?? UIImage(named: "AppIcon.appiconset/loading.PNG") {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 200, height: 200)
+                } else {
+                    // Fallback if image can't be found
+                    VStack(spacing: 20) {
+                        Text("Loading...")
+                            .font(.title)
+                            .foregroundColor(textColor)
+                        
+                        ProgressView()
+                            .scaleEffect(1.5)
+                    }
+                }
+            }
+        }
+    }
+}
 
 // Navigation destination identifier enum for type-safe navigation
 enum NavigationDestination: Hashable {
     case project(UUID)
     case folder(projectID: UUID, folderID: UUID)
+    case pdfViewer(projectID: UUID, folderID: UUID, pdfURL: URL)
 }
 
 struct DashboardView: View {
@@ -18,6 +80,8 @@ struct DashboardView: View {
     @State private var showingProjectColorPicker = false
     @State private var editingProject: Project? = nil
     @State private var selectedColor: Color = .blue
+    @State private var isLoading = true
+    @AppStorage("hasLaunchedBefore") private var hasLaunchedBefore = false
     
     // Create a navigation path object to manage navigation state
     @State private var navigationPath = NavigationPath()
@@ -25,41 +89,103 @@ struct DashboardView: View {
     var body: some View {
         // Use NavigationStack instead of NavigationView
         NavigationStack(path: $navigationPath) {
-            List {
-                ForEach(dataStore.projects) { project in
-                    // Instead of a NavigationLink, use a Button
-                    Button {
-                        // Add project destination to the path
-                        navigationPath.append(NavigationDestination.project(project.id))
-                    } label: {
-                        // Add project icon to label with custom color
-                        HStack {
-                            Image(systemName: "book.closed.fill")
-                                .foregroundColor(project.iconColor)
-                            Text(project.name)
-                            Spacer()
-                            Button {
-                                editingProject = project
-                                selectedColor = project.iconColor
-                                showingProjectColorPicker = true
-                            } label: {
-                                Image(systemName: "paintpalette")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+            ZStack {
+                // Dark background
+                backgroundColor.edgesIgnoringSafeArea(.all)
+                
+                List {
+                    ForEach(dataStore.projects) { project in
+                        // Instead of a NavigationLink, use a Button
+                        Button {
+                            // Add project destination to the path
+                            navigationPath.append(NavigationDestination.project(project.id))
+                        } label: {
+                            // Add project icon to label with custom color
+                            HStack {
+                                Image(systemName: "book.closed.fill")
+                                    .foregroundColor(project.iconColor)
+                                Text(project.name)
+                                    .foregroundColor(textColor)
+                                Spacer()
+                                Button {
+                                    editingProject = project
+                                    selectedColor = project.iconColor
+                                    showingProjectColorPicker = true
+                                } label: {
+                                    Image(systemName: "paintpalette")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .listRowBackground(cardColor)
+                    }
+                    .onDelete(perform: deleteProject)
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(InsetGroupedListStyle())
+                .navigationTitle("Projects")
+                .toolbarColorScheme(.dark)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: { showingAddProject = true }) {
+                            Image(systemName: "plus")
+                                .foregroundColor(.white)
                         }
                     }
                 }
-                .onDelete(perform: deleteProject)
-            }
-            .listStyle(InsetGroupedListStyle())
-            .navigationTitle("Projects")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddProject = true }) {
-                        Image(systemName: "plus")
+                
+                // Loading screen overlay only on first launch
+                if isLoading && !hasLaunchedBefore {
+                    LoadingView()
+                        .transition(.opacity)
+                        .zIndex(100) // Ensure it's on top
+                }
+                
+                // Floating Action Button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: { showingAddProject = true }) {
+                            ZStack {
+                                // Outer glow effect
+                                Circle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(width: 70, height: 70)
+                                    .blur(radius: 5)
+                                
+                                // Button background
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 60, height: 60)
+                                    .shadow(radius: 4)
+                                
+                                // Thicker plus symbol
+                                Image(systemName: "plus")
+                                    .font(.system(size: 25, weight: .bold))
+                                    .foregroundColor(.black)
+                            }
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 30)
                     }
+                }
+            }
+            .onAppear {
+                // Only show loading screen on first app launch
+                if !hasLaunchedBefore {
+                    // Set the flag to true so we don't show loading again
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        withAnimation(.easeOut(duration: 0.5)) {
+                            isLoading = false
+                            hasLaunchedBefore = true
+                        }
+                    }
+                } else {
+                    // Skip loading if not first launch
+                    isLoading = false
                 }
             }
             .sheet(isPresented: $showingAddProject) {
@@ -87,6 +213,7 @@ struct DashboardView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
             }
             .sheet(isPresented: $showingProjectColorPicker) {
                 VStack(spacing: 16) {
@@ -118,6 +245,7 @@ struct DashboardView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
             }
             // Define our navigation destinations
             .navigationDestination(for: NavigationDestination.self) { destination in
@@ -127,17 +255,22 @@ struct DashboardView: View {
                         ProjectView(project: project, dataStore: dataStore, navigationPath: $navigationPath)
                     } else {
                         Text("Project not found")
+                            .foregroundColor(.white)
                     }
                 case .folder(let projectID, let folderID):
                     if let project = dataStore.projects.first(where: { $0.id == projectID }),
                        let folder = project.folders.first(where: { $0.id == folderID }) {
-                        FolderView(project: project, folder: folder, dataStore: dataStore)
+                        FolderView(project: project, folder: folder, dataStore: dataStore, navigationPath: $navigationPath)
                     } else {
                         Text("Folder not found")
+                            .foregroundColor(.white)
                     }
+                case .pdfViewer(let projectID, let folderID, let pdfURL):
+                    PDFViewer(pdfURL: pdfURL)
                 }
             }
         }
+        .preferredColorScheme(.dark)
     }
     
     func deleteProject(at offsets: IndexSet) {
@@ -152,10 +285,12 @@ struct ProjectView: View {
     let project: Project
     @ObservedObject var dataStore: FlashcardDataStore
     @State private var showingAddFolder = false
+    @State private var showingDocumentPicker = false
     @State private var newFolderName = ""
     @State private var selectedColor: Color = .yellow
     @State private var showingFolderColorPicker = false
     @State private var editingFolder: Folder? = nil
+    @State private var showingMenu = false // For the popup menu
     
     // Bind to parent's navigation path
     @Binding var navigationPath: NavigationPath
@@ -163,44 +298,163 @@ struct ProjectView: View {
     var body: some View {
         // Find the up-to-date project state
         guard let currentProject = dataStore.projects.first(where: { $0.id == project.id }) else {
-            return AnyView(Text("Project not found").navigationTitle(""))
+            return AnyView(Text("Project not found").navigationTitle("").foregroundColor(textColor))
         }
         
         return AnyView(
-            List {
-                ForEach(currentProject.folders) { folder in
-                    // Instead of NavigationLink, use Button
-                    Button {
-                        // Add folder destination to the path
-                        navigationPath.append(NavigationDestination.folder(projectID: currentProject.id, folderID: folder.id))
-                    } label: {
-                        // Add folder icon to label with custom color
-                        HStack {
-                            Image(systemName: "folder.fill")
-                                .foregroundColor(folder.iconColor)
-                            Text(folder.name)
-                            Spacer()
-                            Button {
-                                editingFolder = folder
-                                selectedColor = folder.iconColor
-                                showingFolderColorPicker = true
-                            } label: {
-                                Image(systemName: "paintpalette")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
+            ZStack {
+                // Dark background
+                backgroundColor.edgesIgnoringSafeArea(.all)
+                
+                List {
+                    ForEach(currentProject.folders) { folder in
+                        // Instead of NavigationLink, use Button
+                        Button {
+                            // Check if it's a PDF folder
+                            if folder.name.hasPrefix("PDF:") {
+                                // Get the PDF URL from UserDefaults
+                                let defaults = UserDefaults.standard
+                                if let pdfPath = defaults.string(forKey: "pdf_\(folder.id.uuidString)") {
+                                    // Create a proper file URL
+                                    let pdfURL = URL(fileURLWithPath: pdfPath)
+                                    
+                                    // Check if file exists
+                                    if FileManager.default.fileExists(atPath: pdfPath) {
+                                        // Navigate to PDF viewer
+                                        navigationPath.append(NavigationDestination.pdfViewer(projectID: currentProject.id, folderID: folder.id, pdfURL: pdfURL))
+                                    } else {
+                                        // PDF file doesn't exist anymore, show folder view instead
+                                        print("PDF file not found at path: \(pdfPath)")
+                                        navigationPath.append(NavigationDestination.folder(projectID: currentProject.id, folderID: folder.id))
+                                    }
+                                } else {
+                                    // Fallback to regular folder view if PDF not found in UserDefaults
+                                    navigationPath.append(NavigationDestination.folder(projectID: currentProject.id, folderID: folder.id))
+                                }
+                            } else {
+                                // Regular folder
+                                navigationPath.append(NavigationDestination.folder(projectID: currentProject.id, folderID: folder.id))
                             }
-                            .buttonStyle(.plain)
+                        } label: {
+                            // Add folder icon to label with custom color
+                            HStack {
+                                // Check if it's a PDF folder and use appropriate icon
+                                Image(systemName: folder.name.hasPrefix("PDF:") ? "doc.text.fill" : "folder.fill")
+                                    .foregroundColor(folder.iconColor)
+                                Text(folder.name)
+                                    .foregroundColor(textColor)
+                                Spacer()
+                                Button {
+                                    editingFolder = folder
+                                    selectedColor = folder.iconColor
+                                    showingFolderColorPicker = true
+                                } label: {
+                                    Image(systemName: "paintpalette")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .listRowBackground(cardColor)
+                    }
+                    .onDelete(perform: deleteFolder)
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(InsetGroupedListStyle())
+                .navigationTitle(currentProject.name)
+                .toolbarColorScheme(.dark)
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        Button(action: { showingAddFolder = true }) {
+                            Image(systemName: "folder.badge.plus")
+                                .foregroundColor(.white)
                         }
                     }
                 }
-                .onDelete(perform: deleteFolder)
-            }
-            .listStyle(InsetGroupedListStyle())
-            .navigationTitle(currentProject.name)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddFolder = true }) {
-                        Image(systemName: "folder.badge.plus")
+                
+                // Floating Action Button and Menu
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        
+                        // Menu popup when button is pressed
+                        if showingMenu {
+                            VStack(spacing: 15) {
+                                // Add Folder option
+                                Button(action: {
+                                    showingMenu = false
+                                    showingAddFolder = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "folder.badge.plus")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundColor(.white)
+                                        Text("Add Folder")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                    }
+                                    .padding(.vertical, 10)
+                                    .padding(.horizontal, 20)
+                                    .background(cardColor)
+                                    .cornerRadius(20)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 5)
+                                }
+                                
+                                // Add PDF option
+                                Button(action: {
+                                    showingMenu = false
+                                    showingDocumentPicker = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "doc.badge.plus")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundColor(.white)
+                                        Text("Add PDF")
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                    }
+                                    .padding(.vertical, 10)
+                                    .padding(.horizontal, 20)
+                                    .background(cardColor)
+                                    .cornerRadius(20)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 5)
+                                }
+                            }
+                            .padding(.bottom, 85)
+                            .padding(.trailing, 20)
+                            .transition(.scale)
+                        }
+                        
+                        // Floating Action Button
+                        Button(action: { 
+                            withAnimation(.spring()) {
+                                showingMenu.toggle()
+                            }
+                        }) {
+                            ZStack {
+                                // Outer glow effect
+                                Circle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(width: 70, height: 70)
+                                    .blur(radius: 5)
+                                
+                                // Button background
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 60, height: 60)
+                                    .shadow(radius: 4)
+                                
+                                // Thicker plus symbol
+                                Image(systemName: "plus")
+                                    .font(.system(size: 25, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .rotationEffect(showingMenu ? .degrees(45) : .degrees(0))
+                            }
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 30)
                     }
                 }
             }
@@ -229,6 +483,7 @@ struct ProjectView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
             }
             .sheet(isPresented: $showingFolderColorPicker) {
                 VStack(spacing: 16) {
@@ -260,6 +515,10 @@ struct ProjectView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
+            }
+            .sheet(isPresented: $showingDocumentPicker) {
+                PDFDocumentPicker(project: project, dataStore: dataStore)
             }
         )
     }
@@ -275,10 +534,91 @@ struct ProjectView: View {
     }
 }
 
+/// UIKit UIDocumentPickerViewController bridge for SwiftUI to select PDFs
+struct PDFDocumentPicker: UIViewControllerRepresentable {
+    let project: Project
+    @ObservedObject var dataStore: FlashcardDataStore
+    @Environment(\.presentationMode) var presentationMode
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf])
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: PDFDocumentPicker
+        
+        init(_ parent: PDFDocumentPicker) {
+            self.parent = parent
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            
+            // Create a folder with the PDF name
+            let pdfName = url.deletingPathExtension().lastPathComponent
+            let newFolder = Folder(name: "PDF: \(pdfName)", iconColor: .red)
+            
+            // Start file access
+            guard url.startAccessingSecurityScopedResource() else {
+                print("Failed to access the PDF file")
+                return
+            }
+            
+            // Create a local copy of the file in the app's document directory
+            do {
+                let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let destinationURL = documentsDirectory.appendingPathComponent(url.lastPathComponent)
+                
+                // Remove any existing file
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                
+                // Copy the file
+                try FileManager.default.copyItem(at: url, to: destinationURL)
+                
+                // Add the folder to the project
+                DispatchQueue.main.async {
+                    self.parent.dataStore.addFolder(newFolder, to: self.parent.project)
+                    
+                    // Store the PDF URL for this folder ID in UserDefaults - store as string path
+                    let defaults = UserDefaults.standard
+                    defaults.set(destinationURL.path, forKey: "pdf_\(newFolder.id.uuidString)")
+                    
+                    self.parent.presentationMode.wrappedValue.dismiss()
+                }
+                
+            } catch {
+                print("Error copying PDF file: \(error)")
+            }
+            
+            // Stop file access
+            url.stopAccessingSecurityScopedResource()
+        }
+    }
+}
+
+// Add FileManager extension to check if file exists
+extension FileManager {
+    func fileExists(at path: String) -> Bool {
+        fileExists(atPath: path)
+    }
+}
+
 struct FolderView: View {
     let project: Project
     let folder: Folder
     @ObservedObject var dataStore: FlashcardDataStore
+    @Binding var navigationPath: NavigationPath
     @State private var showingAddFlashcard = false
     @State private var showingGenerateFlashcards = false
     @State private var newQuestion = ""
@@ -294,87 +634,181 @@ struct FolderView: View {
     @State private var showingEditSheet = false
     @State private var isListView = false
     @State private var isExamMode = false
+    @State private var shuffledCards: [Flashcard]? = nil
+    @State private var dragOffset: CGFloat = 0
     
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
     
+    private func shuffleCards() {
+        guard let currentFolder = dataStore.projects.first(where: { $0.id == project.id })?.folders.first(where: { $0.id == folder.id }) else { return }
+        
+        // Always create a new shuffle
+        var cards = shuffledCards ?? currentFolder.flashcards
+        cards.shuffle()
+        shuffledCards = cards
+    }
+    
     var body: some View {
         guard let currentFolder = dataStore.projects.first(where: { $0.id == project.id })?.folders.first(where: { $0.id == folder.id }) else {
-            return AnyView(Text("Folder has been deleted").navigationTitle(""))
+            return AnyView(Text("Folder has been deleted").navigationTitle("").foregroundColor(textColor))
         }
 
+        // Use either shuffled cards or original cards
+        let displayedCards = shuffledCards ?? currentFolder.flashcards
+
         return AnyView(
-            VStack(spacing: 0) {
-                HStack {
-                    Spacer()
-                    Button(action: { isListView.toggle() }) {
-                        Image(systemName: isListView ? "square.grid.2x2" : "list.bullet")
-                            .imageScale(.large)
+            ZStack {
+                // Dark background
+                backgroundColor.edgesIgnoringSafeArea(.all)
+                
+                VStack(spacing: 0) {
+                    HStack {
+                        Spacer()
+                        Button(action: shuffleCards) {
+                            Image(systemName: "shuffle")
+                                .imageScale(.large)
+                                .foregroundColor(textColor)
+                        }
+                        .padding(.horizontal, 4)
+                        Button(action: { isListView.toggle() }) {
+                            Image(systemName: isListView ? "square.grid.2x2" : "list.bullet")
+                                .imageScale(.large)
+                                .foregroundColor(textColor)
+                        }
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.horizontal)
-                }
-                if isListView {
-                    List {
-                        ForEach(currentFolder.flashcards, id: \.id) { card in
-                            DisclosureGroup {
-                                Text(card.answer)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .padding(.vertical, 4)
-                            } label: {
-                                Text(card.question)
-                                    .font(.headline)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    if isListView {
+                        List {
+                            ForEach(displayedCards, id: \.id) { card in
+                                DisclosureGroup {
+                                    Text(card.answer)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                        .padding(.vertical, 4)
+                                } label: {
+                                    Text(card.question)
+                                        .font(.headline)
+                                        .foregroundColor(textColor)
+                                }
+                                .padding(.vertical, 8)
+                                .listRowBackground(cardColor)
                             }
-                            .padding(.vertical, 8)
+                            .onDelete { offsets in
+                                deleteFlashcard(at: offsets, from: folder, in: project)
+                                // Reset shuffled state if cards are deleted
+                                shuffledCards = nil
+                            }
                         }
-                        .onDelete { offsets in
-                            deleteFlashcard(at: offsets, from: folder, in: project)
-                        }
-                    }
-                    .listStyle(InsetGroupedListStyle())
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 24) {
-                            ForEach(currentFolder.flashcards, id: \.id) { card in
-                                FlashcardCardView(
-                                    card: card,
-                                    onEdit: {
-                                        editingCard = card
-                                        editQuestion = card.question
-                                        editAnswer = card.answer
-                                        showingEditSheet = true
-                                    },
-                                    onDelete: {
-                                        DispatchQueue.main.async {
-                                            dataStore.removeFlashcard(card, from: folder, in: project)
+                        .scrollContentBackground(.hidden)
+                        .listStyle(InsetGroupedListStyle())
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 24) {
+                                ForEach(displayedCards, id: \.id) { card in
+                                    FlashcardCardView(
+                                        card: card,
+                                        onEdit: {
+                                            editingCard = card
+                                            editQuestion = card.question
+                                            editAnswer = card.answer
+                                            showingEditSheet = true
+                                        },
+                                        onDelete: {
+                                            DispatchQueue.main.async {
+                                                dataStore.removeFlashcard(card, from: folder, in: project)
+                                                // Reset shuffled state if cards are deleted
+                                                shuffledCards = nil
+                                            }
                                         }
-                                    }
-                                )
-                                .frame(maxWidth: .infinity)
+                                    )
+                                    .frame(maxWidth: .infinity)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.top)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { hideKeyboard() }
+                    }
+                }
+                .navigationTitle(folder.name)
+                .toolbarColorScheme(.dark)
+                .toolbar {
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        Button(action: { showingAddFlashcard = true }) {
+                            Image(systemName: "plus.square.on.square")
+                                .foregroundColor(.white)
+                        }
+                        Button(action: { showingGenerateFlashcards = true }) {
+                            Image(systemName: "sparkles")
+                                .foregroundColor(.white)
+                        }
+                        Button(action: { isExamMode = true }) {
+                            Image(systemName: "play.circle")
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                
+                // Floating Action Button
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Button(action: { showingAddFlashcard = true }) {
+                            ZStack {
+                                // Outer glow effect
+                                Circle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(width: 70, height: 70)
+                                    .blur(radius: 5)
+                                
+                                // Button background
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 60, height: 60)
+                                    .shadow(radius: 4)
+                                
+                                // Thicker plus symbol
+                                Image(systemName: "plus")
+                                    .font(.system(size: 25, weight: .bold))
+                                    .foregroundColor(.black)
                             }
                         }
-                        .padding(.horizontal)
-                        .padding(.top)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture { hideKeyboard() }
-                }
-            }
-            .navigationTitle(folder.name)
-            .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddFlashcard = true }) {
-                        Image(systemName: "plus.square.on.square")
-                    }
-                    Button(action: { showingGenerateFlashcards = true }) {
-                        Image(systemName: "sparkles")
-                    }
-                    Button(action: { isExamMode = true }) {
-                        Image(systemName: "play.circle")
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 30)
                     }
                 }
             }
+            // Add a swipe right gesture to navigate back
+            .gesture(
+                DragGesture()
+                    .onChanged { gesture in
+                        if gesture.translation.width > 0 {
+                            // Only track right swipes (positive width)
+                            self.dragOffset = gesture.translation.width
+                        }
+                    }
+                    .onEnded { gesture in
+                        if gesture.translation.width > 100 {
+                            // Pop back to the project view if swiped right enough
+                            if navigationPath.count > 0 {
+                                // Add haptic feedback
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                withAnimation {
+                                    navigationPath.removeLast()
+                                }
+                            }
+                        }
+                        // Reset offset
+                        self.dragOffset = 0
+                    }
+            )
+            .offset(x: dragOffset / 4) // Add some visual feedback, but don't move the view too much
             .sheet(isPresented: $showingAddFlashcard) {
                 VStack(spacing: 16) {
                     Text("New Flashcard").font(.headline)
@@ -396,6 +830,7 @@ struct FolderView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
             }
             .sheet(isPresented: $showingGenerateFlashcards) {
                 VStack(spacing: 16) {
@@ -464,6 +899,7 @@ struct FolderView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
             }
             .background(
                 EmptyView()
@@ -498,6 +934,7 @@ struct FolderView: View {
                     }
                 }
                 .padding()
+                .preferredColorScheme(.dark)
             }
         )
     }
@@ -527,53 +964,61 @@ struct FlashcardCardView: View {
     @State private var isChecking = false
     @State private var showFullscreen = false
     
+    // Fixed card dimensions
+    private let cardWidth: CGFloat = 160
+    private let cardHeight: CGFloat = 200
+    
     var body: some View {
         VStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color(UIColor { trait in
-                        trait.userInterfaceStyle == .dark ? UIColor(red: 30/255, green: 30/255, blue: 32/255, alpha: 1) : UIColor.white
-                    }))
+                    .fill(cardColor)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
-                            .stroke(Color(UIColor { trait in
-                                trait.userInterfaceStyle == .dark ? UIColor(white: 0.4, alpha: 1) : UIColor.black
-                            }), lineWidth: 2)
+                            .stroke(Color(UIColor.gray), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.18), radius: 5, x: 0, y: 2)
+                    .shadow(color: backgroundColor.opacity(0.18), radius: 5, x: 0, y: 2)
                 // front view
                 VStack {
+                    Spacer(minLength: 10)
                     Text(card.question)
-                        .font(card.question.count > 80 ? .caption : .title2)
+                        .font(card.question.count > 80 ? .caption : (card.question.count > 40 ? .body : .title3))
                         .fontWeight(.bold)
-                        .foregroundColor(Color.primary)
+                        .foregroundColor(textColor)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                        .minimumScaleFactor(0.5)
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
+                    Spacer()
                     Text("Tap to see answer")
                         .font(.caption)
                         .foregroundColor(.gray)
+                        .padding(.bottom, 5)
                 }
-                .padding()
+                .padding(8)
                 .opacity(isFlipped ? 0 : 1)
                 // back view
                 VStack {
+                    Spacer(minLength: 10)
                     Text(card.answer)
-                        .font(card.answer.count > 80 ? .caption : .title2)
+                        .font(card.answer.count > 80 ? .caption : (card.answer.count > 40 ? .body : .title3))
                         .fontWeight(.medium)
-                        .foregroundColor(Color.primary)
+                        .foregroundColor(textColor)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
+                        .minimumScaleFactor(0.5)
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
+                    Spacer()
                     Text("Tap to see question")
                         .font(.caption)
                         .foregroundColor(.gray)
+                        .padding(.bottom, 5)
                 }
-                .padding()
+                .padding(8)
                 .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                 .opacity(isFlipped ? 1 : 0)
             }
-            .frame(minHeight: 180)
+            .frame(width: cardWidth, height: cardHeight)
             .onTapGesture {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
                     isFlipped.toggle()
@@ -588,18 +1033,16 @@ struct FlashcardCardView: View {
             .animation(.spring(response: 0.6, dampingFraction: 0.7), value: isFlipped)
             .sheet(isPresented: $showFullscreen) {
                 ZStack {
-                    Color.black.edgesIgnoringSafeArea(.all)
+                    backgroundColor.edgesIgnoringSafeArea(.all)
                     VStack(spacing: 24) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 32)
-                                .fill(Color(UIColor { trait in
-                                    trait.userInterfaceStyle == .dark ? UIColor(red: 30/255, green: 30/255, blue: 32/255, alpha: 1) : UIColor.white
-                                }))
-                                .shadow(color: Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
+                                .fill(cardColor)
+                                .shadow(color: backgroundColor.opacity(0.3), radius: 12, x: 0, y: 6)
                             VStack {
                                 Text(isFlipped ? card.answer : card.question)
                                     .font(.system(size: 30, weight: .bold))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(textColor)
                                     .multilineTextAlignment(.center)
                                     .padding()
                                 Text(isFlipped ? "Tap to see question" : "Tap to see answer")
@@ -619,13 +1062,14 @@ struct FlashcardCardView: View {
                                 .font(.title2)
                                 .padding(.horizontal, 32)
                                 .padding(.vertical, 12)
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
+                                .background(Color.blue)
+                                .foregroundColor(textColor)
                                 .cornerRadius(16)
                         }
                         .padding(.top, 24)
                     }
                 }
+                .preferredColorScheme(.dark)
             }
             // Answer input section
             ZStack {
@@ -636,23 +1080,20 @@ struct FlashcardCardView: View {
                     }
                 TextField("Your answer", text: $userAnswer)
                     .padding(8)
-                    .background(Color(UIColor { trait in
-                        trait.userInterfaceStyle == .dark ? UIColor(red: 44/255, green: 44/255, blue: 46/255, alpha: 1) : UIColor.white
-                    }))
+                    .background(cardColor)
                     .cornerRadius(8)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray, lineWidth: 1))
-                    .foregroundColor(Color.primary)
+                    .foregroundColor(textColor)
                     .padding(.horizontal)
             }
             HStack {
                 Button("Check") {
                     isChecking = true
                     score = nil
-                    GeminiAPI.shared.evaluateAnswer(correct: card.answer, userAnswer: userAnswer) { result in
+                    Task {
+                        let result = await GeminiAPI.shared.evaluateAnswer(userAnswer: userAnswer, correctAnswer: card.answer)
                         isChecking = false
-                        if case .success(let value) = result {
-                            score = value
-                        }
+                        score = Int(result * 100)
                     }
                 }
                 .disabled(userAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChecking)
@@ -666,13 +1107,20 @@ struct FlashcardCardView: View {
                 }
             }
             HStack(spacing: 8) {
-                Button(action: onEdit) { Image(systemName: "pencil") }
-                Button(action: onDelete) { Image(systemName: "trash") }
+                Button(action: onEdit) { 
+                    Image(systemName: "pencil")
+                        .foregroundColor(textColor)
+                }
+                Button(action: onDelete) { 
+                    Image(systemName: "trash")
+                        .foregroundColor(textColor) 
+                }
                 Spacer()
             }
             .buttonStyle(.plain)
             .font(.caption2)
         } // VStack
+        .frame(width: cardWidth)
     }
 }
 
@@ -719,7 +1167,8 @@ struct ExamView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
-                Color(UIColor.systemBackground)
+                // Use pure black background
+                backgroundColor
                     .edgesIgnoringSafeArea(.all)
                     .onTapGesture {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -728,19 +1177,17 @@ struct ExamView: View {
                     Spacer()
                     if currentIndex < flashcards.count {
                         ProgressView(value: Double(currentIndex + 1), total: Double(flashcards.count))
-                            .progressViewStyle(LinearProgressViewStyle(tint: Color.accentColor))
+                            .progressViewStyle(LinearProgressViewStyle(tint: Color.blue))
                             .padding(.horizontal)
                         Text("Card \(currentIndex + 1) of \(flashcards.count)")
                             .font(.headline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.gray)
                             .padding(.bottom, 8)
                         HStack {
                             Spacer()
                             ZStack {
                                 RoundedRectangle(cornerRadius: 20)
-                                    .fill(Color(UIColor { trait in
-                                        trait.userInterfaceStyle == .dark ? UIColor(red: 30/255, green: 30/255, blue: 32/255, alpha: 1) : UIColor.white
-                                    }))
+                                    .fill(cardColor)
                                     .shadow(radius: 5)
                                     .rotation3DEffect(.degrees(showAnswer ? 180 : 0), axis: (x: 0, y: 1, z: 0))
                                 VStack {
@@ -749,9 +1196,9 @@ struct ExamView: View {
                                         Text(showAnswer ? "Answer" : "Question")
                                             .font(.caption)
                                             .fontWeight(.semibold)
-                                            .foregroundColor(.accentColor)
+                                            .foregroundColor(.blue)
                                             .padding(8)
-                                            .background(Color.accentColor.opacity(0.12))
+                                            .background(Color.blue.opacity(0.12))
                                             .cornerRadius(8)
                                             .padding([.top, .trailing], 10)
                                     }
@@ -761,7 +1208,9 @@ struct ExamView: View {
                                     .font(.largeTitle)
                                     .multilineTextAlignment(.center)
                                     .padding()
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(textColor)
+                                    .minimumScaleFactor(0.4)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             .frame(width: geometry.size.width * 0.9, height: geometry.size.height * 0.7)
                             .offset(x: cardOffset.width)
@@ -792,12 +1241,13 @@ struct ExamView: View {
                             Spacer()
                             Text("Exam Complete!")
                                 .font(.largeTitle)
+                                .foregroundColor(textColor)
                                 .padding()
                             Button("Done") { presentationMode.wrappedValue.dismiss() }
                                 .font(.title2)
                                 .padding()
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
+                                .background(Color.blue)
+                                .foregroundColor(textColor)
                                 .cornerRadius(10)
                             Spacer()
                         }
@@ -811,23 +1261,20 @@ struct ExamView: View {
                                 }
                             TextField("Your answer", text: $userAnswer)
                                 .padding(8)
-                                .background(Color(UIColor { trait in
-                                    trait.userInterfaceStyle == .dark ? UIColor(red: 44/255, green: 44/255, blue: 46/255, alpha: 1) : UIColor.white
-                                }))
+                                .background(cardColor)
                                 .cornerRadius(8)
                                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray, lineWidth: 1))
-                                .foregroundColor(Color.primary)
+                                .foregroundColor(textColor)
                                 .padding(.horizontal)
                         }
                         HStack {
                             Button("Check") {
                                 isChecking = true
                                 score = nil
-                                GeminiAPI.shared.evaluateAnswer(correct: flashcards[currentIndex].answer, userAnswer: userAnswer) { result in
+                                Task {
+                                    let result = await GeminiAPI.shared.evaluateAnswer(userAnswer: userAnswer, correctAnswer: flashcards[currentIndex].answer)
                                     isChecking = false
-                                    if case .success(let value) = result {
-                                        score = value
-                                    }
+                                    score = Int(result * 100)
                                 }
                             }
                             .disabled(userAnswer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isChecking)
@@ -841,20 +1288,6 @@ struct ExamView: View {
                             }
                         }
                         .padding(.bottom, 8)
-                    } else {
-                        VStack {
-                            Spacer()
-                            Text("Exam Complete!")
-                                .font(.largeTitle)
-                                .padding()
-                            Button("Done") { presentationMode.wrappedValue.dismiss() }
-                                .font(.title2)
-                                .padding()
-                                .background(Color.accentColor)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                            Spacer()
-                        }
                     }
                     Spacer()
                 }
@@ -863,6 +1296,7 @@ struct ExamView: View {
                     score = nil
                 }
             }
+            .preferredColorScheme(.dark)
             .contentShape(Rectangle())
             .onTapGesture {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -870,3 +1304,407 @@ struct ExamView: View {
         }
     }
 }
+
+// Create a simple PDF viewer with top and bottom bars like the screenshot
+struct PDFViewer: View {
+    let pdfURL: URL
+    @Environment(\.presentationMode) var presentationMode
+    @State private var showHighlightMode = false
+    
+    var body: some View {
+        ZStack {
+            Color.black.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 0) {
+                // Top navigation bar - simplified like the screenshot
+                HStack {
+                    Button(action: {
+                        presentationMode.wrappedValue.dismiss()
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white)
+                            .padding(.leading)
+                    }
+                    
+                    Spacer()
+                    
+                    Text("PDF Viewer")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        // More options
+                    }) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 24))
+                            .foregroundColor(.white)
+                            .padding(.trailing)
+                    }
+                }
+                .padding(.top, 44)
+                .padding(.bottom, 8)
+                .background(Color.black)
+                
+                // Toolbar with icons
+                HStack(spacing: 0) {
+                    // Highlight button
+                    ToolbarButton(icon: "pencil", label: "Highlight", isSelected: showHighlightMode) {
+                        showHighlightMode.toggle()
+                    }
+                    
+                    // Undo button
+                    ToolbarButton(icon: "arrow.uturn.backward", label: "Undo", isSelected: false) {
+                        NotificationCenter.default.post(name: NSNotification.Name("UndoLastHighlight"), object: nil)
+                    }
+                    
+                    // Underline button
+                    ToolbarButton(icon: "underline", label: "Underline", isSelected: false) {
+                        // Underline action
+                    }
+                    
+                    // Note button
+                    ToolbarButton(icon: "text.bubble", label: "Note", isSelected: false) {
+                        // Note action
+                    }
+                }
+                .padding(.top, 4)
+                .padding(.bottom, 8)
+                .background(Color.black)
+                
+                // PDF Content - Full screen
+                StrictZoomPDFView(pdfURL: pdfURL, showHighlightMode: showHighlightMode)
+                    .edgesIgnoringSafeArea(.horizontal)
+                
+                // Bottom toolbar
+                HStack(spacing: 0) {
+                    BottomToolbarButton(icon: "square.grid.2x2", label: "Pages") {
+                        // Pages action
+                    }
+                    
+                    BottomToolbarButton(icon: "magnifyingglass", label: "Search") {
+                        // Search action
+                    }
+                    
+                    BottomToolbarButton(icon: "bookmark", label: "Bookmarks") {
+                        // Bookmarks action
+                    }
+                    
+                    BottomToolbarButton(icon: "doc.text", label: "Outline") {
+                        // Outline action
+                    }
+                }
+                .padding(.top, 8)
+                .padding(.bottom, 30) // Extra padding for home indicator
+                .background(Color.black)
+            }
+        }
+        .navigationBarHidden(true)
+        .statusBar(hidden: true)
+        .edgesIgnoringSafeArea(.all)
+        .preferredColorScheme(.dark)
+    }
+}
+
+// Top toolbar button with icon and label
+struct ToolbarButton: View {
+    var icon: String
+    var label: String
+    var isSelected: Bool
+    var action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(isSelected ? .yellow : .white)
+                
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(isSelected ? .yellow : .white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(isSelected ? Color.yellow.opacity(0.15) : Color.clear)
+            .cornerRadius(8)
+        }
+    }
+}
+
+// Bottom toolbar button
+struct BottomToolbarButton: View {
+    var icon: String
+    var label: String
+    var action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(.white)
+                
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+        }
+    }
+}
+
+// Create extension to access PDFView's scrollView for better control
+extension PDFView {
+    var pdfScrollView: UIScrollView? {
+        // Find the scroll view within PDFView's subviews
+        return subviews.first { $0 is UIScrollView } as? UIScrollView
+    }
+}
+
+// Modify StrictZoomPDFView to remove DrawingView and update gesture handling
+struct StrictZoomPDFView: UIViewRepresentable {
+    let pdfURL: URL
+    var showHighlightMode: Bool
+    
+    func makeUIView(context: Context) -> UIView {
+        // Create the PDF view (Container view no longer needed)
+        let pdfView = PDFView()
+        pdfView.tag = 100 // Keep tag for reference if needed
+        pdfView.backgroundColor = .black
+        
+        // Configure PDF view
+        setupPDFView(pdfView, context: context)
+        
+        return pdfView // Return PDFView directly
+    }
+    
+    func updateUIView(_ pdfView: UIView, context: Context) {
+        // Cast to PDFView
+        guard let pdfView = pdfView as? PDFView else { return }
+        
+        // Update coordinator state
+        context.coordinator.isHighlightModeActive = showHighlightMode
+        
+        // COMPLETELY disable scrolling when in highlight mode
+        if let scrollView = pdfView.pdfScrollView {
+            // First approach: disable scroll view completely
+            scrollView.isScrollEnabled = !showHighlightMode
+            
+            // Second approach: freeze content offset when in highlight mode
+            if showHighlightMode {
+                context.coordinator.savedContentOffset = scrollView.contentOffset
+                context.coordinator.isScrollingLocked = true
+            } else {
+                context.coordinator.isScrollingLocked = false
+            }
+        }
+        
+        // Enforce min zoom level when needed
+        if pdfView.scaleFactor < context.coordinator.pageFitScaleFactor {
+            pdfView.scaleFactor = context.coordinator.pageFitScaleFactor
+        }
+    }
+    
+    private func setupPDFView(_ pdfView: PDFView, context: Context) {
+        // Basic configuration
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayDirection = .vertical
+        pdfView.backgroundColor = .black
+        
+        // Set zoom limits to fit page width
+        pdfView.minScaleFactor = pdfView.scaleFactorForSizeToFit // Set minimum scale to fit width
+        pdfView.maxScaleFactor = 4.0
+        pdfView.autoScales = true  // Enable auto-scaling for initial fit
+        
+        // Store reference to PDF view
+        context.coordinator.pdfView = pdfView
+        
+        // Add gesture recognizers to capture zoom changes and enforce minimum
+        let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinchGesture(_:)))
+        pinchGesture.delegate = context.coordinator
+        pdfView.addGestureRecognizer(pinchGesture)
+        
+        // Add pan gesture for highlighting using PDFAnnotations
+        let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePanGesture(_:)))
+        panGesture.delegate = context.coordinator
+        pdfView.addGestureRecognizer(panGesture)
+        
+        // Load document
+        if FileManager.default.fileExists(atPath: pdfURL.path) {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let document = PDFDocument(url: pdfURL)
+                
+                DispatchQueue.main.async {
+                    pdfView.document = document
+                    
+                    // Set initial zoom to fit page width
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        // Store the page fit factor for bounce-back
+                        let fitFactor = pdfView.scaleFactorForSizeToFit
+                        context.coordinator.pageFitScaleFactor = fitFactor
+                        
+                        // Apply the fit factor
+                        pdfView.scaleFactor = fitFactor
+                        
+                        // Add observer for undo notification
+                        NotificationCenter.default.addObserver(
+                            context.coordinator,
+                            selector: #selector(Coordinator.undoLastHighlightAnnotation),
+                            name: NSNotification.Name("UndoLastHighlight"),
+                            object: nil
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    // Coordinator modified to handle PDFAnnotations
+    class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var parent: StrictZoomPDFView
+        var isHighlightModeActive: Bool = false
+        var pdfView: PDFView?
+        var pageFitScaleFactor: CGFloat = 1.0
+        var lastScale: CGFloat = 1.0
+        
+        // Add properties for scroll locking
+        var isScrollingLocked: Bool = false
+        var savedContentOffset: CGPoint = .zero
+        
+        // Store annotations for undo
+        var currentAnnotation: PDFAnnotation?
+        var addedAnnotations: [PDFAnnotation] = []
+        var currentPage: PDFPage?
+        
+        init(_ parent: StrictZoomPDFView) {
+            self.parent = parent
+            super.init()
+        }
+        
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+        
+        // Handle pinch gesture to enforce minimum zoom
+        @objc func handlePinchGesture(_ gesture: UIPinchGestureRecognizer) {
+            guard let pdfView = self.pdfView else { return }
+            
+            // Don't allow pinch zooming if highlight mode is active
+            if isHighlightModeActive {
+                gesture.state = .cancelled
+                return
+            }
+            
+            if gesture.state == .began {
+                lastScale = pdfView.scaleFactor
+            }
+            else if gesture.state == .changed {
+                let currentScale = lastScale * gesture.scale
+                pdfView.scaleFactor = max(currentScale, pageFitScaleFactor)
+            }
+        }
+        
+        // Handle scroll events - keep position fixed in highlight mode
+        @objc func handleScrollViewDidScroll(_ scrollView: UIScrollView) {
+            if isScrollingLocked && isHighlightModeActive {
+                // Force scroll view to stay at saved position
+                scrollView.contentOffset = savedContentOffset
+            }
+        }
+        
+        // Override scrollViewDidScroll for KVO observation
+        override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+            if keyPath == "contentOffset", let scrollView = object as? UIScrollView {
+                if isScrollingLocked && isHighlightModeActive {
+                    // Force scroll view to stay at saved position without animation
+                    scrollView.contentOffset = savedContentOffset
+                }
+            }
+        }
+        
+        // Ensure gesture recognizers don't allow scrolling in highlight mode
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // If we're in highlight mode and one is a scroll gesture, PREVENT it
+            if isHighlightModeActive {
+                // Block scroll gestures when highlighting
+                if otherGestureRecognizer is UIPanGestureRecognizer && 
+                   otherGestureRecognizer.view is UIScrollView {
+                    return false
+                }
+                
+                // Block pinch zooming when highlighting
+                if otherGestureRecognizer is UIPinchGestureRecognizer {
+                    return false
+                }
+            }
+            
+            // Allow simultaneous gestures otherwise
+            return true
+        }
+        
+        // Undo the last added highlight annotation
+        @objc func undoLastHighlightAnnotation() {
+            guard let lastAnnotation = addedAnnotations.popLast(),
+                  let page = lastAnnotation.page else { return }
+            
+            page.removeAnnotation(lastAnnotation)
+        }
+        
+        // Restore the handlePanGesture method that was mistakenly removed
+        @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
+            guard let pdfView = self.pdfView, isHighlightModeActive else { return }
+            
+            let location = gesture.location(in: pdfView)
+            guard let page = pdfView.page(for: location, nearest: true) else { return }
+            let convertedPoint = pdfView.convert(location, to: page)
+            
+            switch gesture.state {
+            case .began:
+                // Create a new Ink annotation
+                let path = UIBezierPath()
+                path.move(to: convertedPoint)
+                
+                let border = PDFBorder()
+                border.lineWidth = 5.0 // Adjust thickness as needed
+                
+                currentAnnotation = PDFAnnotation(bounds: page.bounds(for: pdfView.displayBox), forType: .ink, withProperties: nil)
+                currentAnnotation?.color = UIColor.yellow.withAlphaComponent(0.3)
+                currentAnnotation?.border = border
+                currentAnnotation?.add(path)
+                
+                // Add to page and store for undo
+                page.addAnnotation(currentAnnotation!)
+                self.currentPage = page
+                
+            case .changed:
+                // Add point to the current annotation's path
+                guard let annotation = currentAnnotation, let path = annotation.paths?.first else { return }
+                path.addLine(to: convertedPoint)
+                annotation.remove(path)
+                annotation.add(path)
+                // Force redraw if needed (usually handled by PDFKit)
+                pdfView.layoutDocumentView()
+                
+            case .ended, .cancelled:
+                // Finalize annotation and add to undo stack
+                if let finalAnnotation = currentAnnotation {
+                    addedAnnotations.append(finalAnnotation)
+                }
+                currentAnnotation = nil
+                currentPage = nil
+                
+            default:
+                break
+            }
+        }
+    }
+}
+

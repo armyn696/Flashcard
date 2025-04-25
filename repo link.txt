@@ -1,1 +1,2 @@
 https://github.com/armyn696/Flashcard.git
+/Users/armyn696/Desktop/my ai apps/Flashcard/Flashcard/Assets.xcassets/AppIcon.appiconset/loading.PNG
